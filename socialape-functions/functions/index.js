@@ -1,14 +1,29 @@
-const functions = require("firebase-functions"); //59K (gzipped: 17K)
-const admin = require("firebase-admin");
-
+const functions = require('firebase-functions'); //59K (gzipped: 17K)
+const admin = require('firebase-admin');
+const app = require('express')();
 admin.initializeApp();
 
-const express = require('express');
-const app = express();
+    // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const config = {
+    apiKey: "AIzaSyD00dZo7RvtPkKGsw-Z4E1ih2aVSXa4-U0",
+    authDomain: "socialape-e9d0d.firebaseapp.com",
+    databaseURL: "https://socialape-e9d0d.firebaseio.com",
+    projectId: "socialape-e9d0d",
+    storageBucket: "socialape-e9d0d.appspot.com",
+    messagingSenderId: "292176147726",
+    appId: "1:292176147726:web:0f9c45753dd5811dc7135f",
+    measurementId: "G-EFX8H45PCB"
+};
+
+const firebase = require('firebase/app');
+require('firebase/auth')
+firebase.initializeApp(config);
+
+const db = admin.firestore();
 
 app.get('/screams', (req, res) => {
-    admin
-    .firestore()
+  db
     .collection("screams")
     .orderBy('createdAt', 'desc')
     .get()
@@ -19,7 +34,9 @@ app.get('/screams', (req, res) => {
             screamID: doc.id,
             body: doc.data().body,
             userHandle: doc.data().userHandle,
-            createdAt: doc.data().createdAt
+            createdAt: doc.data().createdAt, 
+            commentCount: doc.data().commentCount,
+            likeCount: doc.data().likeCount
         });
       });
       return res.json(screams);
@@ -35,8 +52,7 @@ app.post('/scream', (req, res) => {
     createdAt: new Date().toISOString()
   };
 
-  admin
-    .firestore()
+  db
     .collection("screams")
     .add(newScream)
     .then((doc) => {
@@ -48,6 +64,57 @@ app.post('/scream', (req, res) => {
     });
 });
 
-//https://baseurl.com/api/  *want this prefix!!
+//sign up route
+app.post('/signup', (req, res) => {
+    const newUser = {
+        email: req.body.email,
+        password: req.body.password,
+        confirmPassword: req.body.confirmPassword,
+        handle: req.body.handle
+    };
+
+    //TODO validate data
+    let token, userId;
+    db.doc(`/users/${newUser.handle}`)
+        .get()
+       .then(doc => {
+           if(doc.exists){
+               return res.status(400).json({ handle: 'this handle is already taken'});
+           } else {
+               return firebase
+            .auth()
+            .createUserWithEmailAndPassword(newUser.email, newUser.password);
+           }
+       })
+       .then((data) => {
+           userId = data.user.uid
+            return data.user.getIdToken();
+       })
+       .then((idToken) => {
+           token = idToken;
+           const userCredentials = {
+               handle: newUser.handle,
+               email: newUser.email,
+               createdAt: new Date().toISOString(),
+               userId
+           };
+           return db.doc(`/users/${newUser.handle}`).set(userCredentials);
+       })
+       .then(() => {
+        return res.status(201).json({ token });
+        })
+       .catch(err => {
+           console.error(err);
+           if(err.code === 'auth/email-already-in-use') {
+               return res.status(400).json({ email: 'Email is already in use' });
+           } else {
+               return res.status(500).json({ error: err.code });
+           }
+       });
+});
 
 exports.api = functions.https.onRequest(app);
+
+// TOKEN FROM POSTMAN
+
+// "eyJhbGciOiJSUzI1NiIsImtpZCI6IjBlM2FlZWUyYjVjMDhjMGMyODFhNGZmN2RjMmRmOGIyMzgyOGQ1YzYiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vc29jaWFsYXBlLWU5ZDBkIiwiYXVkIjoic29jaWFsYXBlLWU5ZDBkIiwiYXV0aF90aW1lIjoxNjAzNDg1MjA2LCJ1c2VyX2lkIjoiZ0hqWnUxMDZBc1d5WURvT1RaNmtVaWdOdEhsMSIsInN1YiI6ImdIalp1MTA2QXNXeVlEb09UWjZrVWlnTnRIbDEiLCJpYXQiOjE2MDM0ODUyMDYsImV4cCI6MTYwMzQ4ODgwNiwiZW1haWwiOiJuZXdAZW1haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJmaXJlYmFzZSI6eyJpZGVudGl0aWVzIjp7ImVtYWlsIjpbIm5ld0BlbWFpbC5jb20iXX0sInNpZ25faW5fcHJvdmlkZXIiOiJwYXNzd29yZCJ9fQ.jDAz4cQPEzlcN6r4N1-jszwgcuM1vnlB6b_sYGFL7IkSE8MVg97GdkhZEVWsONua0zWVwxM4o5BQRjGaqJQZUIx9e5Tg0SWzB-TL0TpeQlGZFG-otsWmtJ3nlld1djDANG2H5GpVrIGWW2mGd8yx4xmOhddrr0frZA4FaSC3_FE3B_JpLFjBuTcbLy3_NGZ3pjCqUbcYwsX6TIIi0ugOOgY5Weo-J54IY0ragsh1CHWeHbIzPJVCSgOM2_OsfGRocFQXCfhQP3X8HwerqH8GbnN2nFLfXWHzXn4OpzHaEWfzOhBhZeUG64cljKu99ZqIq7gzlqrzYmhXYlI7WxW0lA
